@@ -89,6 +89,51 @@ def run_swap_regret(T=5000, eta=0.1):
 
     return phi / T
 
+def compute_menu_points(phi0, phi1):
+    mnsr = compute_MNSR()
+
+    # include LP points
+    all_points = mnsr + [phi0, phi1]
+
+    # project to 2D
+    proj = np.array([project(p) for p in all_points])
+
+    return proj
+
+def compute_menu_hull(phi0, phi1):
+    pts = compute_menu_points(phi0, phi1)
+
+    hull = ConvexHull(pts)
+
+    return pts, hull
+
+def plot_menu_region(phi0, phi1):
+    pts, hull = compute_menu_hull(phi0, phi1)
+
+    plt.figure(figsize=(6,6))
+
+    # fill full menu region
+    plt.fill(pts[hull.vertices, 0],
+             pts[hull.vertices, 1],
+             alpha=0.3,
+             color="cyan",
+             label="Menu region")
+
+    # boundary points
+    plt.plot(pts[hull.vertices, 0],
+             pts[hull.vertices, 1],
+             'k-')
+
+    plt.xlim(0,1)
+    plt.ylim(0,1)
+    plt.xlabel("P(A)")
+    plt.ylabel("P(R)")
+    plt.title("Full Menu Region")
+
+    plt.legend()
+    plt.grid(True)
+
+    plt.show()
 
 # =============================
 # MNSR REGION
@@ -203,6 +248,7 @@ def solve_full_lp():
 # =============================
 # BLACKWELL (OPTIMIZED)
 # =============================
+
 def blackwell_step(phi, phi_proj):
     d = phi - phi_proj
 
@@ -253,19 +299,41 @@ def run_blackwell(phi0, phi1, T=5000, gamma=0.05, lam=0.5):
 # =============================
 # PLOTTING
 # =============================
+
 def plot_all(phi_nr, phi_bw, phi_lp, phi0, phi1, history, phi_swap):
     plt.figure(figsize=(6,6))
 
     # MNSR
-    pts = np.array([project(p) for p in compute_MNSR()])
-    hull = ConvexHull(pts)
-    plt.fill(pts[hull.vertices,0], pts[hull.vertices,1],
-             alpha=0.2, label="MNSR")
+    pts_mnsr = np.array([project(p) for p in compute_MNSR()])
+    hull_mnsr = ConvexHull(pts_mnsr)
+    plt.fill(pts_mnsr[hull_mnsr.vertices,0], pts_mnsr[hull_mnsr.vertices,1],
+             alpha=0.2, color="purple", label="MNSR")
+
+    pts_menu, hull_menu = compute_menu_hull(phi0, phi1)
+
+    plt.fill(pts_menu[hull_menu.vertices, 0],
+             pts_menu[hull_menu.vertices, 1],
+             alpha=0.2,
+             color="cyan",
+             label="Menu")
+
+    # # boundary
+    # plt.plot(menu_proj[hull_menu.vertices, 0],
+    #          menu_proj[hull_menu.vertices, 1],
+    #          color="blue", linestyle="--", linewidth=2)
+
 
     # Blackwell trajectory
     traj = np.array([project(p) for p in history])
-    plt.plot(traj[:,0], traj[:,1], label="Blackwell+Opt", linewidth=2)
 
+    # prepend true start
+    start = np.array([[0.0, 0.0]])
+    traj_full = np.vstack([start, traj])
+    plt.plot(traj_full[:, 0],
+             traj_full[:, 1],
+             color="blue",
+             linewidth=2,
+             label="Blackwell trajectory")
     # points
     plt.scatter(*project(phi_bw), color="purple", s=140, label="Final BW")
     plt.scatter(*project(phi_lp), color="purple", marker="X", s=160, label="LP optimum")
@@ -274,11 +342,6 @@ def plot_all(phi_nr, phi_bw, phi_lp, phi0, phi1, history, phi_swap):
 
     plt.scatter(*project(phi0), color="red", s=120, label="φ₀")
     plt.scatter(*project(phi1), color="blue", s=120, label="φ₁")
-
-    # menu line
-    x0,y0 = project(phi0)
-    x1,y1 = project(phi1)
-    plt.plot([x0,x1],[y0,y1],'k--', label="Menu")
 
     plt.xlim(0,1)
     plt.ylim(0,1)
