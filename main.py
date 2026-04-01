@@ -246,7 +246,7 @@ def solve_full_lp():
 
 
 # =============================
-# BLACKWELL (OPTIMIZED)
+# BLACKWELL
 # =============================
 
 def blackwell_step(phi, phi_proj):
@@ -288,7 +288,7 @@ def run_blackwell(phi0, phi1, T=5000, gamma=0.05, lam=0.5):
         x, y = blackwell_step(phi, proj_phi)
 
         phi_bw = np.outer(x, y)
-        phi += gamma * ((phi_bw - phi) + lam * uL)
+        phi += gamma * (phi_bw - phi)
         phi = project_simplex(phi)
 
         history.append(phi.copy())
