@@ -5,14 +5,15 @@ from scipy.optimize import linprog
 # =============================
 # GAME SETUP
 # =============================
-uL = np.array([[0, 3],
-               [7, 2]])
+uL = np.array([[1, -1],
+               [-1, 1]])
 
 uO_list = [
-    np.array([[0, 1],
-              [0, 1]]),
-    np.array([[1, 0],
-              [2, 0]])
+    np.array([[1, -1],
+              [-1, 1]]),   # type 1 (coordination)
+
+    np.array([[-1, 1],
+              [1, -1]])    # type 2 (anti-coordination)
 ]
 
 alpha = np.array([0.5, 0.5])
@@ -571,6 +572,7 @@ if __name__ == "__main__":
     print("\nEquality constraints (A_eq):")
     for i, val in enumerate(dual_eq):
         print(f"Eq {i}: {val:.6f}")
+
 
     # Plots
     plot_payoff(bw_hist, mwu_hist, swap_hist, opt)
