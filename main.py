@@ -337,8 +337,8 @@ def plot_payoff(bw_hist, mwu_hist, swap_hist, optimal):
     plt.plot(swap_pay, label="Swap")
     plt.axhline(optimal, linestyle='--', label="Optimal")
     plt.legend(); plt.grid()
-    plt.title("Payoff convergence")
-    plt.savefig("game1_1.png")
+    plt.title("Payoffs")
+    plt.savefig("payoffs.png")
 
 def plot_convergence(bw_hist):
     _,reg = evaluate_history(bw_hist)
@@ -347,7 +347,7 @@ def plot_convergence(bw_hist):
     plt.plot(reg, label="Regret")
     plt.legend(); plt.grid()
     plt.title("Blackwell convergence")
-    plt.savefig("game1_2.png")
+    plt.savefig("convergence.png")
 
 
 def plot_benchmark(bw_hist, mwu_hist, swap_hist, optimal):
