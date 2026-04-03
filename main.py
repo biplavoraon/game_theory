@@ -5,23 +5,37 @@ from scipy.optimize import linprog
 # =============================
 # GAME SETUP
 # =============================
-uL = np.array([[1, -1],
-               [-1, 1]])
+
+uL = np.array([[0, 0],
+               [2, -1]])
 
 uO_list = [
-    np.array([[1, -1],
-              [-1, 1]]),   # type 1 (coordination)
+    np.array([[0, 0],
+              [-1, 1]]),   # type 1 (prefers column L)
 
-    np.array([[-1, 1],
-              [1, -1]])    # type 2 (anti-coordination)
+    np.array([[0, 0],
+              [1, -1]])    # type 2 (prefers column R)
 ]
 
 alpha = np.array([0.5, 0.5])
+
+k = len(uO_list)
+m = len(uL)
+
+# Objective vector (same as LP)
+c_obj = np.concatenate([
+    alpha[i]*uL.flatten() for i in range(k)
+] + [np.zeros(m)])
 
 m, n = uL.shape
 k = len(uO_list)
 
 np.random.seed(0)
+
+def build_objective(alpha):
+    return np.concatenate([
+        alpha[i]*uL.flatten() for i in range(len(alpha))
+    ] + [np.zeros(m)])
 
 # =============================
 # HELPERS
@@ -114,10 +128,15 @@ def project(z):
     return res.x if res.success else z
 
 def oracle(direction):
-    res = linprog(direction, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method="highs")
+    res = linprog(-direction,  # <-- FIX: negate
+                  A_ub=A_ub, b_ub=b_ub,
+                  A_eq=A_eq, b_eq=b_eq,
+                  bounds=bounds,
+                  method="highs")
     if not res.success:
         raise RuntimeError("Oracle failed")
     return res.x
+
 
 def solve_lp_with_duals():
     c = np.concatenate([
@@ -141,20 +160,47 @@ def solve_lp_with_duals():
 
     return res.x, dual_ineq, dual_eq
 
+def run_experiment(alpha):
+    global c_obj
+
+    # update objective
+    c_obj = build_objective(alpha)
+
+    # solve LP
+    z_lp = solve_lp()
+    phi_list_lp,_ = unpack(z_lp)
+    phi_mix_lp = sum(alpha[i]*phi_list_lp[i] for i in range(k))
+    opt = payoff(phi_mix_lp)
+
+    # run Blackwell / FW
+    z_bw, _ = run_blackwell()
+    phi_bw,_ = unpack(z_bw)
+    phi_bw = sum(alpha[i]*phi_bw[i] for i in range(k))
+    bw_val = payoff(phi_bw)
+
+    return opt, bw_val
+
 # =============================
 # BLACKWELL
 # =============================
-def run_blackwell(T=1000, gamma=0.05):
-    z = np.ones(dim)/dim
+def run_blackwell(T=3000, gamma=0.01):
+    z = np.ones(dim) / dim
     history = []
 
-    for _ in range(T):
-        z_proj = project(z)
-        d = z_proj - z
-        z = z + gamma * (oracle(d) - z)
+    for t in range(T):
+        # small entropy regularization to avoid collapse
+        grad = c_obj - 0.01 * np.log(z + 1e-8)
+
+        # oracle (maximize)
+        s = oracle(grad)
+
+        # constant step size (more stable than 2/(t+2))
+        z = (1 - gamma) * z + gamma * s
+
         history.append(z.copy())
 
     return z, history
+
 
 # =============================
 # MWU / SWAP
@@ -223,16 +269,17 @@ def regret_violation(z):
     return max_reg
 
 def evaluate_history(history):
-    pay, reg, dist = [], [], []
+    pay, reg = [], []
+
     for z in history:
         phi_list,_ = unpack(z)
         phi_mix = sum(alpha[i]*phi_list[i] for i in range(k))
 
         pay.append(payoff(phi_mix))
         reg.append(regret_violation(z))
-        dist.append(np.linalg.norm(z - project(z)))
 
-    return np.array(pay), np.array(reg), np.array(dist)
+    return np.array(pay), np.array(reg)
+
 
 def evaluate_mwu_history(mwu_hist):
     pay, reg = [], []
@@ -280,7 +327,7 @@ def track_constraints(history):
 # PLOTTING
 # =============================
 def plot_payoff(bw_hist, mwu_hist, swap_hist, optimal):
-    bw_pay,_,_ = evaluate_history(bw_hist)
+    bw_pay,_ = evaluate_history(bw_hist)
     mwu_pay = [payoff(phi) for phi in mwu_hist]
     swap_pay = [payoff(phi) for phi in swap_hist]
 
@@ -294,85 +341,19 @@ def plot_payoff(bw_hist, mwu_hist, swap_hist, optimal):
     plt.savefig("game1_1.png")
 
 def plot_convergence(bw_hist):
-    _,reg,dist = evaluate_history(bw_hist)
+    _,reg = evaluate_history(bw_hist)
 
     plt.figure()
     plt.plot(reg, label="Regret")
-    plt.plot(dist, label="Distance")
     plt.legend(); plt.grid()
     plt.title("Blackwell convergence")
     plt.savefig("game1_2.png")
 
-def plot_pca(history):
-    Z = np.array(history)
-    Zp = PCA(n_components=2).fit_transform(Z)
-
-    plt.figure()
-    plt.plot(Zp[:,0], Zp[:,1])
-    plt.title("PCA trajectory")
-    plt.grid()
-    plt.savefig("game1_3.png")
-
-# def plot_3d_full(history, z_lp):
-#     xs, ys, zs = [], [], []
-#
-#     # ---- Blackwell trajectory ----
-#     for z in history:
-#         phi_list, x = unpack(z)
-#
-#         xs.append(phi_list[0][0,0])  # φ1
-#         ys.append(phi_list[1][0,0])  # φ2
-#         zs.append(x[0])              # x
-#
-#     # ---- Optimal point ----
-#     phi_list_lp, x_lp = unpack(z_lp)
-#     opt_x = phi_list_lp[0][0,0]
-#     opt_y = phi_list_lp[1][0,0]
-#     opt_z = x_lp[0]
-#
-#     # ---- Plot ----
-#     fig = plt.figure()
-#     ax = fig.add_subplot(111, projection='3d')
-#
-#     # trajectory
-#     ax.plot(xs, ys, zs, label="Blackwell", linewidth=2)
-#
-#     # final point
-#     ax.scatter(xs[-1], ys[-1], zs[-1], color='purple', s=80, label="BW final")
-#
-#     # optimal
-#     ax.scatter(opt_x, opt_y, opt_z, color='black', s=100, marker='X', label="LP")
-#
-#     ax.set_xlabel("φ1[0,0]")
-#     ax.set_ylabel("φ2[0,0]")
-#     ax.set_zlabel("x[0]")
-#
-#     ax.set_title("3D: Blackwell trajectory + optimal")
-#
-#     ax.legend()
-#     plt.savefig("3d_full.png")
-
-# def plot_menu_3d(ax, phi_list_lp):
-#     xs, ys, zs = [], [], []
-#
-#     for lam in np.linspace(0,1,50):
-#         phi1 = phi_list_lp[0]
-#         phi2 = phi_list_lp[1]
-#
-#         phi_mix = lam*phi1 + (1-lam)*phi2
-#
-#         x = phi_mix.sum(axis=1)
-#
-#         xs.append(phi_mix[0,0])
-#         ys.append(phi_mix[0,0])  # approximate projection
-#         zs.append(x[0])
-#
-#     ax.plot(xs, ys, zs, color="cyan", linewidth=3, label="Menu")
 
 def plot_benchmark(bw_hist, mwu_hist, swap_hist, optimal):
 
     # Blackwell
-    bw_pay, bw_reg, bw_dist = evaluate_history(bw_hist)
+    bw_pay, bw_reg = evaluate_history(bw_hist)
     bw_gap = compute_gap(bw_pay, optimal)
 
     # MWU
@@ -416,24 +397,28 @@ def plot_benchmark(bw_hist, mwu_hist, swap_hist, optimal):
     plt.savefig("benchmark.png")
 
 def compute_gap(pay, optimal):
-    return optimal - pay
+    return np.abs(optimal - pay)
 
-def plot_pca_3d(history):
-    Z = np.array(history)
-
-    pca = PCA(n_components=3)
-    Zp = pca.fit_transform(Z)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    ax.plot(Zp[:,0], Zp[:,1], Zp[:,2])
-
-    ax.set_title("3D PCA projection of trajectory")
-    plt.savefig("pca_3d.png")
-
-
-from sklearn.decomposition import PCA
+# def run_experiment(k, alpha):
+#     global uO_list, dim, A_eq, b_eq, A_ub, b_ub, bounds
+#
+#     uO_list = generate_optimizer_types(k)
+#
+#     # ---- rebuild LP ----
+#     dim, A_eq, b_eq, A_ub, b_ub, bounds = build_constraints()
+#
+#     # ---- LP ----
+#     z_lp = solve_lp()
+#     phi_list_lp,_ = unpack(z_lp)
+#     phi_mix_lp = sum(alpha[i]*phi_list_lp[i] for i in range(k))
+#     opt = payoff(phi_mix_lp)
+#
+#     # ---- Blackwell ----
+#     z_bw, _ = run_blackwell()
+#     phi_bw,_ = unpack(z_bw)
+#     phi_bw = sum(alpha[i]*phi_bw[i] for i in range(k))
+#
+#     return opt, payoff(phi_bw)
 
 
 def build_menu_z(phi_list_lp):
@@ -457,52 +442,6 @@ def build_menu_z(phi_list_lp):
 
     return np.array(Z_menu)
 
-
-# def plot_pca_3d_with_menu(history, z_lp, phi_list_lp):
-#     # ---- Build data ----
-#     Z_traj = np.array(history)
-#     Z_menu = build_menu_z(phi_list_lp)
-#     Z_opt = z_lp.reshape(1, -1)
-#
-#     # ---- Combine for PCA ----
-#     Z_all = np.vstack([Z_traj, Z_menu, Z_opt])
-#
-#     # ---- PCA ----
-#     pca = PCA(n_components=3)
-#     Z_proj = pca.fit_transform(Z_all)
-#
-#     # split back
-#     n_traj = len(Z_traj)
-#     n_menu = len(Z_menu)
-#
-#     traj_proj = Z_proj[:n_traj]
-#     menu_proj = Z_proj[n_traj:n_traj+n_menu]
-#     opt_proj = Z_proj[-1]
-#
-#     # ---- Plot ----
-#     fig = plt.figure(figsize=(8,6))
-#     ax = fig.add_subplot(111, projection='3d')
-#
-#     # trajectory
-#     ax.plot(traj_proj[:,0], traj_proj[:,1], traj_proj[:,2],
-#             label="Blackwell", linewidth=2)
-#
-#     # menu
-#     ax.plot(menu_proj[:,0], menu_proj[:,1], menu_proj[:,2],
-#             color="cyan", linewidth=3, label="Menu")
-#
-#     # optimal
-#     ax.scatter(opt_proj[0], opt_proj[1], opt_proj[2],
-#                color="black", s=100, marker="X", label="LP")
-#
-#     # final point
-#     ax.scatter(traj_proj[-1,0], traj_proj[-1,1], traj_proj[-1,2],
-#                color="purple", s=80, label="BW final")
-#
-#     ax.set_title("3D PCA: Menu vs Blackwell trajectory")
-#
-#     ax.legend()
-#     plt.savefig("pca_3d_menu.png")
 
 def plot_constraint_violations(history):
         vals = track_constraints(history)
@@ -577,8 +516,29 @@ if __name__ == "__main__":
     # Plots
     plot_payoff(bw_hist, mwu_hist, swap_hist, opt)
     plot_convergence(bw_hist)
-    plot_pca(bw_hist)
     plot_benchmark(bw_hist, mwu_hist, swap_hist, opt)
     # plot_pca_3d_with_menu(bw_hist, z_lp, phi_list_lp)
     plot_constraint_violations(bw_hist)
     plot_duals(dual_ineq)
+
+    eps_values = np.linspace(0, 1, 21)
+    opt_vals = []
+    bw_vals = []
+
+    for eps in eps_values:
+        alpha = np.array([eps, 1 - eps])
+        opt, bw = run_experiment(alpha)
+        opt_vals.append(opt)
+        bw_vals.append(bw)
+
+    plt.figure()
+    plt.plot(eps_values, opt_vals, label="LP optimal", linewidth=2)
+    plt.plot(eps_values, bw_vals, '--', label="Blackwell (FW)", linewidth=2)
+
+    plt.xlabel("alpha (probability of type 1)")
+    plt.ylabel("Value")
+    plt.title("Value vs Type Distribution (alpha)")
+    plt.legend()
+    plt.grid()
+
+    plt.savefig("alpha_sweep.png")
