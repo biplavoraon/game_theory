@@ -6,15 +6,15 @@ from scipy.optimize import linprog
 # GAME SETUP
 # =============================
 
-uL = np.array([[3, 0],
-               [5, 1]])
+uL = np.array([[3, 4],
+               [4, 0]])
 
 uO_list = [
-    np.array([[4, 1],
-              [3, 2]]),   # type 1 (prefers column L)
+    np.array([[2, 2],
+              [0, 4]]),   # type 1 (prefers column R)
 
-    np.array([[3, 5],
-              [0, 1]])    # type 2 (prefers column R)
+    np.array([[2, 0],
+              [2, 4]])    # type 2 (no preference)
 ]
 
 # k = 1
@@ -710,67 +710,70 @@ if __name__ == "__main__":
     # plot_pca_simplex(alphas, opt_vals)
 
 
-        # Unknown alpha
+    # Unknown alpha
 
-        z_lp = solve_lp()
-        phi_list_lp, _ = unpack(z_lp)
-        phi_mix_lp = sum(alpha[i]*phi_list_lp[i] for i in range(k))
-        opt = payoff(phi_mix_lp)
+    z_lp = solve_lp()
+    phi_list_lp, _ = unpack(z_lp)
+    phi_mix_lp = sum(alpha[i]*phi_list_lp[i] for i in range(k))
+    opt = payoff(phi_mix_lp)
 
-        print("\n=== LP Benchmark ===")
-        print("Optimal value:", opt)
+    print("\n=== LP Benchmark ===")
+    print("Optimal value:", opt)
 
-        # =============================
-        # UCB + STOCHASTIC BLACKWELL
-        # =============================
-        print("\n=== Running UCB-Stochastic Blackwell ===")
+    # =============================
+    # UCB + STOCHASTIC BLACKWELL
+    # =============================
+    print("\n=== Running UCB-Stochastic Blackwell ===")
 
-        z_ucb, bw_hist, alpha_hist = run_ucb_stochastic_blackwell(
-            T=3000,
-            gamma=0.01,
-            c=1.0
-        )
+    z_ucb, bw_hist, alpha_hist = run_ucb_stochastic_blackwell(
+        T=3000,
+        gamma=0.01,
+        c=1.0
+    )
 
-        phi_list_bw, _ = unpack(z_ucb)
-        phi_bw = sum(alpha[i]*phi_list_bw[i] for i in range(k))
+    phi_list_bw, _ = unpack(z_ucb)
+    phi_bw = sum(alpha[i]*phi_list_bw[i] for i in range(k))
 
-        bw_val = payoff(phi_bw)
+    bw_val = payoff(phi_bw)
 
-        print("Blackwell (UCB) value:", bw_val)
+    print("Blackwell (UCB) value:", bw_val)
 
-        # =============================
-        # MWU / SWAP (baseline)
-        # =============================
-        print("\n=== Running MWU / Swap ===")
+    # =============================
+    # MWU / SWAP (baseline)
+    # =============================
+    print("\n=== Running MWU / Swap ===")
 
-        mwu_hist = run_mwu_history()
-        swap_hist = run_swap_history()
+    mwu_hist = run_mwu_history()
+    swap_hist = run_swap_history()
 
-        mwu_val = payoff(mwu_hist[-1])
-        swap_val = payoff(swap_hist[-1])
+    mwu_val = payoff(mwu_hist[-1])
+    swap_val = payoff(swap_hist[-1])
 
-        print("MWU value:", mwu_val)
-        print("Swap value:", swap_val)
+    print("MWU value:", mwu_val)
+    print("Swap value:", swap_val)
 
-        # =============================
-        # DIAGNOSTICS
-        # =============================
-        print("\n=== Diagnostics ===")
+    # =============================
+    # DIAGNOSTICS
+    # =============================
+    print("\n=== Diagnostics ===")
 
-        # regret + feasibility
-        bw_pay, bw_reg = evaluate_history(bw_hist)
+    # regret + feasibility
+    bw_pay, bw_reg = evaluate_history(bw_hist)
 
-        print("Final regret:", bw_reg[-1])
+    print("Final regret:", bw_reg[-1])
 
-        # =============================
-        # PLOTS
-        # =============================
-        print("\n=== Generating plots ===")
+    # =============================
+    # PLOTS
+    # =============================
+    print("\n=== Generating plots ===")
 
-        plot_payoff(bw_hist, mwu_hist, swap_hist, opt)
-        plot_convergence(bw_hist)
-        plot_benchmark(bw_hist, mwu_hist, swap_hist, opt)
-        plot_constraint_violations(bw_hist)
-        plot_alpha_learning(alpha_hist, alpha)
+    plot_payoff(bw_hist, mwu_hist, swap_hist, opt)
+    plot_convergence(bw_hist)
+    plot_benchmark(bw_hist, mwu_hist, swap_hist, opt)
+    plot_constraint_violations(bw_hist)
+    plot_alpha_learning(alpha_hist, alpha)
+    z_lp, dual_ineq, dual_eq = solve_lp_with_duals()
+    plot_duals(dual_ineq)
 
-        print("Saved plots: payoffs.png, convergence.png, benchmark.png, constraints.png, alpha_learning.png")
+
+    print("Saved plots: payoffs.png, convergence.png, benchmark.png, constraints.png, alpha_learning.png, dual_ineq.png")
