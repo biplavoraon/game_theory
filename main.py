@@ -246,58 +246,40 @@ def run_ucb_stochastic_blackwell(T=3000, gamma=0.01, c=1.0):
     counts = np.ones(k)
     history = []
     alpha_hist = []
+    z_avg = np.zeros_like(z)
 
-    for t in range(1, T+1):
+    for t in range(1, T + 1):
         gamma = 1 / np.sqrt(t)
 
-        # ---- sample type from environment ----
-        i = np.random.choice(k, p=alpha)
-
-        # ---- update counts ----
-        counts[i] += 1
-        p_hat = counts / counts.sum()
-
-        # ---- optimistic prior ----
-        alpha_ucb = compute_ucb_alpha(counts, t, c)
-        alpha_hist.append(alpha_ucb.copy())
-
-        # ---- build stochastic gradient ----
-        grad = np.zeros(dim)
-
-        # ---- leader payoff part ----
-        start = i * m * n
-        end = (i + 1) * m * n
-
-        weight = alpha_ucb[i] / max(p_hat[i], 1e-6)
-
-        grad[start:end] += weight * uL.flatten()
-
-        for a_star in range(m):
-            for a in range(m):
-                for b in range(n):
-                    idx = i*m*n + a*n + b
-                    grad[idx] += weight * (uL[a_star, b] - uL[a, b])
-
-        for j in range(n):
-            for a in range(m):
-                for b in range(n):
-                    idx = i*m*n + a*n + b
-                    grad[idx] += uO_list[i][a, b]
-
-            for a in range(m):
-                idx_x = k*m*n + a
-                grad[idx_x] -= uO_list[i][a, j]
-
-        # entropy regularization
+        # ---- full gradient ----
+        grad = c_obj.copy()
         grad -= 0.01 * np.log(z + 1e-8)
 
-        # ---- oracle ----
-        s = oracle(grad)
+        A = -np.array(A_ub)
 
-        # ---- update ----
+        g_curr = A @ z
+
+        if t == 1:
+            g_avg = g_curr
+        else:
+            g_avg = (t - 1) / t * g_avg + (1 / t) * g_curr
+
+        u_t = np.maximum(-g_avg, 0)
+
+        # ✅ CRITICAL FIX
+        direction = grad + A.T @ u_t
+
+        s = oracle(direction)
+
         z = (1 - gamma) * z + gamma * s
 
-        history.append(z.copy())
+        # ✅ CRITICAL FIX
+        if t == 1:
+            z_avg = z.copy()
+        else:
+            z_avg = (t - 1) / t * z_avg + (1 / t) * z
+
+        history.append(z_avg.copy())
 
     return z, history, alpha_hist
 
@@ -620,7 +602,12 @@ def plot_duals(dual_ineq):
     plt.savefig("dual_ineq.png")
 
 def plot_alpha_learning(alpha_hist, true_alpha):
-    alpha_hist = np.array(alpha_hist)
+
+    if len(alpha_hist) == 0:
+        print("⚠️ alpha_hist is empty — skipping plot")
+        return
+
+    alpha_hist = np.vstack(alpha_hist)
 
     plt.figure()
     for i in range(len(true_alpha)):
@@ -631,8 +618,6 @@ def plot_alpha_learning(alpha_hist, true_alpha):
     plt.title("Learning the type distribution")
     plt.grid()
     plt.savefig("alpha_learning.png")
-
-
 # =============================
 # MAIN
 # =============================
